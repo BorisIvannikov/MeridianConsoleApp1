@@ -1,0 +1,71 @@
+﻿Тестировал всё в MSSQL Там нет встроенной рекурсии, поэтому обход таблиц оборачивал в отдельные функции
+
+2. Какая общая сумма зп для всех сотрудников которые работают во всей группе сотруднков Финансы?						
+
+CREATE FUNCTION dbo.GetFinancialGroups()
+RETURNS @FinancialGroups TABLE (
+    ID INT,
+    NAME NVARCHAR(255),
+    PARENT_ID INT
+)
+AS
+BEGIN
+    DECLARE @groupId INT;
+    SET @groupId = (SELECT ID FROM EMPLOYEE_GROUP WHERE NAME = 'Финансы');
+
+    WHILE @groupId IS NOT NULL
+    BEGIN
+        INSERT INTO @FinancialGroups
+        SELECT ID, NAME, PARENT_ID
+        FROM EMPLOYEE_GROUP
+        WHERE ID = @groupId;
+
+        SET @groupId = (SELECT PARENT_ID FROM EMPLOYEE_GROUP WHERE ID = @groupId);
+    END
+
+    RETURN;
+END
+GO
+
+SELECT SUM(e.SALARY) AS total_salary
+FROM EMPLOYEES e
+JOIN EMPLOYEE_GROUP eg ON e.EMPLOYEE_GROUP_ID = eg.ID
+WHERE eg.ID IN (SELECT ID FROM dbo.GetFinancialGroups());
+
+3. Какой сотрудник в отделе финансов получает зарплату вторым по сумме.
+CREATE FUNCTION dbo.GetFinancialGroupIds()
+RETURNS @FinancialGroupIds TABLE (
+    ID INT
+)
+AS
+BEGIN
+    DECLARE @groupId INT;
+    SET @groupId = (SELECT ID FROM EMPLOYEE_GROUP WHERE NAME = 'Финансы');
+
+    INSERT INTO @FinancialGroupIds (ID)
+    VALUES (@groupId);
+
+    WHILE @groupId IS NOT NULL
+    BEGIN
+        SET @groupId = (SELECT TOP 1 PARENT_ID FROM EMPLOYEE_GROUP WHERE ID = @groupId);
+        IF @groupId IS NOT NULL
+            INSERT INTO @FinancialGroupIds (ID)
+            VALUES (@groupId);
+    END
+
+    RETURN;
+END
+GO
+WITH FinancialEmployees AS (
+    SELECT e.ID, e.NAME, e.SALARY, e.EMPLOYEE_GROUP_ID
+    FROM EMPLOYEES e
+    WHERE e.EMPLOYEE_GROUP_ID IN (SELECT ID FROM dbo.GetFinancialGroupIds())
+)
+SELECT TOP 1 *
+FROM (
+    SELECT TOP 2 *
+    FROM FinancialEmployees
+    ORDER BY SALARY DESC
+) AS SecondHighestSalary
+ORDER BY SALARY ASC;
+
